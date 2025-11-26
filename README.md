@@ -8,7 +8,7 @@ Prometheus and Grafana are powerful, complementary tools for system monitoring: 
 
 **Prerequisites**
 
-- Ubuntu 20.04 operating system
+- Ubuntu 24.04 operating system
 - Root user account or a user with sudo privileges
 - Dedicated Prometheus system user and group
 - Adequate storage space and stable internet connectivity
@@ -23,8 +23,7 @@ Prometheus and Grafana are powerful, complementary tools for system monitoring: 
 
 ```bash
 sudo apt update -y
-sudo su -
-export RELEASE="2.2.1" # Export the release of Prometheus
+sudo apt upgrade -y
 ```
 
 - Creating Prometheus System Users and Directory
@@ -32,8 +31,11 @@ export RELEASE="2.2.1" # Export the release of Prometheus
 ```bash
 sudo useradd --no-create-home --shell /bin/false prometheus
 sudo useradd --no-create-home --shell /bin/false node_exporter
-sudo mkdir /etc/prometheus
-sudo mkdir /var/lib/prometheus
+```
+
+```bash
+sudo mkdir -p /etc/prometheus
+sudo mkdir -p /var/lib/prometheus
 ```
 
 - Give ownership
@@ -47,75 +49,59 @@ sudo chown prometheus:prometheus /var/lib/prometheus
 
 ```bash
 cd /opt/
-wget https://github.com/prometheus/prometheus/releases/download/v3.5.0/prometheus-3.5.0.linux-amd64.tar.gz
+sudo wget https://github.com/prometheus/prometheus/releases/download/v3.5.0/prometheus-3.5.0.linux-amd64.tar.gz
+sudo tar -xvf prometheus-3.5.0.linux-amd64.tar.gz
 ```
 
-- Install Prometheus on Ubuntu 20.04 LTS
+- Copy binaries, consoles and config, and set ownership
 
 ```bash
-sha256sum prometheus-2.26.0.linux-amd64.tar.gz # generate a checksum of the Prometheus downloaded file.
-tar -xvf prometheus-2.26.0.linux-amd64.tar.gz
-cd prometheus-2.26.0.linux-amd64
+# Adjust folder name if different; tab-complete helps: /opt/prometheus-3.5.0.linux-*
+sudo cp /opt/prometheus-3.5.0.linux-amd64/prometheus /usr/local/bin/
+sudo cp /opt/prometheus-3.5.0.linux-amd64/promtool /usr/local/bin/
+
+sudo chown prometheus:prometheus /usr/local/bin/prometheus /usr/local/bin/promtool
+
+# copy consoles & config
+sudo cp -r /opt/prometheus-3.5.0.linux-amd64/consoles /etc/prometheus
+sudo cp -r /opt/prometheus-3.5.0.linux-amd64/console_libraries /etc/prometheus
+sudo cp /opt/prometheus-3.5.0.linux-amd64/prometheus.yml /etc/prometheus/
+
+# fix ownership recursively
+sudo chown -R prometheus:prometheus /etc/prometheus
 ls -la
 ```
 
-- Copy Prometheus Binary files
+- Edit `prometheus.yml` so it scrapes node_exporter
 
 ```bash
-sudo cp /opt/prometheus-2.26.0.linux-amd64/prometheus /usr/local/bin/
-sudo cp /opt/prometheus-2.26.0.linux-amd64/promtool /usr/local/bin/
-```
+sudo tee /etc/prometheus/prometheus.yml > /dev/null <<'EOF'
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
 
-- Update Prometheus user ownership on Binaries
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
 
-```bash
-sudo chown prometheus:prometheus /usr/local/bin/prometheus
-sudo chown prometheus:prometheus /usr/local/bin/promtool
-```
-
-- Copy Prometheus Console Libraries
-
-```bash
-sudo cp -r /opt/prometheus-2.26.0.linux-amd64/consoles /etc/prometheus
-sudo cp -r /opt/prometheus-2.26.0.linux-amd64/console_libraries /etc/prometheus
-sudo cp -r /opt/prometheus-2.26.0.linux-amd64/prometheus.yml /etc/prometheus
-```
-
-- Update Prometheus ownership on Directories
-
-```bash
-sudo chown -R prometheus:prometheus /etc/prometheus/consoles
-sudo chown -R prometheus:prometheus /etc/prometheus/console_libraries
-sudo chown -R prometheus:prometheus /etc/prometheus/prometheus.yml
+  - job_name: 'node_exporter'
+    static_configs:
+      - targets: ['localhost:9100']
+EOF
 ```
 
 ```bash
-prometheus --version
-promtool --version
+# ensure ownership
+sudo chown prometheus:prometheus /etc/prometheus/prometheus.yml
 ```
 
-- Prometheus configuration file
-
-The `prometheus.yml` file has been copied from `/opt/prometheus-2.26.0.linux-amd64/` to `/etc/prometheus`. Confirm it is present, review its contents, and update it as needed.
+- Create systemd unit for Prometheus and start it
 
 ```bash
-cat /etc/prometheus/prometheus.yml
-```
-
-```bash
-vi /etc/prometheus/prometheus.yml
-- targets: ['localhost:9090', 'localhost:9100'] # update `targets: ['localhost:9090']`
-```
-
-- create a system service file in `/etc/systemd/system` location
-
-```bash
-sudo vi /etc/systemd/system/prometheus.service
-```
-
-```bash
+sudo tee /etc/systemd/system/prometheus.service > /dev/null <<'EOF'
 [Unit]
-Description=Prometheus
+Description=Prometheus Monitoring
 Wants=network-online.target
 After=network-online.target
 
@@ -124,122 +110,119 @@ User=prometheus
 Group=prometheus
 Type=simple
 ExecStart=/usr/local/bin/prometheus \
-    --config.file /etc/prometheus/prometheus.yml \
-    --storage.tsdb.path /var/lib/prometheus/ \
-    --web.console.templates=/etc/prometheus/consoles \
-    --web.console.libraries=/etc/prometheus/console_libraries
+  --config.file=/etc/prometheus/prometheus.yml \
+  --storage.tsdb.path=/var/lib/prometheus \
+  --web.console.templates=/etc/prometheus/consoles \
+  --web.console.libraries=/etc/prometheus/console_libraries
+
+Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
+EOF
 ```
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl start prometheus
-sudo systemctl enable prometheus
-sudo systemctl status prometheus
+sudo systemctl enable --now prometheus
+# verify
+sudo systemctl status prometheus --no-pager
+# quick check that prometheus is responding
+curl -sS http://localhost:9090/-/ready || echo "Prometheus not responding yet"
 ```
 
+- Install Node Exporter
+
 ```bash
-sudo ufw allow 9090/tcp # allow firewall
-http://server-IP:9090 # login from browser
+cd /opt
+sudo wget https://github.com/prometheus/node_exporter/releases/download/v1.10.2/node_exporter-1.10.2.linux-amd64.tar.gz
+sudo tar -xvf node_exporter-1.10.2.linux-amd64.tar.gz
+sudo cp node_exporter-1.10.2.linux-amd64/node_exporter /usr/local/bin/
+sudo chown node_exporter:node_exporter /usr/local/bin/node_exporter
 ```
 
-#### [Grafana Installation](https://grafana.com/docs/grafana/latest/setup-grafana/installation/)
+- Create systemd unit for Node Exporter and start it
 
 ```bash
-wget -q -O - https://packages.grafana.com/gpg.key | sudo apt-key add –
-echo "deb https://packages.grafana.com/oss/deb stable main" | sudo tee -a /etc/apt/sources.list.d/grafana.list
-sudo apt-get update
-sudo apt-get install grafana
-sudo systemctl start grafana-server
-sudo systemctl status grafana-server
-sudo systemctl enable grafana-server.service
-```
-
-```bash
-http://server-IP:3000
-```
-
-```bash
-Username: admin
-Password: admin
-```
-
-- Configure Prometheus as Grafana DataSource
-- Once you logged into Grafana Now first Navigate to `Settings` > `Configuration` > `data sources`
-- Add `Data sources` and select `Prometheus`
-- Now configure Prometheus data source by providing Prometheus `URL`
-
-#### [Node Exporter Installation](https://prometheus.io/download/)
-
-- Download and unzip
-
-```bash
-wget https://github.com/prometheus/node_exporter/releases/download/v1.10.2/node_exporter-1.10.2.linux-amd64.tar.gz
-sudo tar xvzf node_exporter-1.2.0.linux-amd64.tar.gz
-cd node_exporter-1.2.0.linux-amd64
-sudo cp node_exporter /usr/local/bin
-```
-
-- Creating Node Exporter Systemd service
-
-```bash
-cd /lib/systemd/system
-sudo vi node_exporter.service
-```
-
-```bash
+sudo tee /etc/systemd/system/node_exporter.service > /dev/null <<'EOF'
 [Unit]
 Description=Node Exporter
 Wants=network-online.target
 After=network-online.target
+
 [Service]
-Type=simple
 User=node_exporter
 Group=node_exporter
-ExecStart=/usr/local/bin/node_exporter \
-— collector.mountstats \
-— collector.logind \
-— collector.processes \
-— collector.ntp \
-— collector.systemd \
-— collector.tcpstat \
-— collector.wifi
+Type=simple
+ExecStart=/usr/local/bin/node_exporter
 Restart=always
-RestartSec=10s
+RestartSec=10
+
 [Install]
 WantedBy=multi-user.target
+EOF
 ```
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable node_exporter
-sudo systemctl start node_exporter
-sudo systemctl status node_exporter
+sudo systemctl enable --now node_exporter
+sudo systemctl status node_exporter --no-pager
 ```
-
-- Configure the Node Exporter as a Prometheus target
 
 ```bash
-cd /etc/prometheus
-sudo vi prometheus.yml
-- targets: ['localhost:9090', 'localhost:9100'] # update `targets: ['localhost:9090']`
+# confirm node_exporter metrics
+curl -sS http://localhost:9100/metrics | head -n 20
 ```
+
+- Tell Prometheus about Node Exporter
 
 ```bash
 sudo systemctl restart prometheus
+# check targets page (on server)
+curl -sS http://localhost:9090/api/v1/targets | jq . # if jq installed
+# or check in browser: http://SERVER-IP:9090/targets
 ```
+
+- Open firewall ports
 
 ```bash
-https://localhost:9100/targets
+sudo ufw allow 9090/tcp
+sudo ufw allow 3000/tcp
+sudo ufw allow 9100/tcp
+sudo ufw status
 ```
 
-- Creating Grafana Dashboard to Monitor Linux Server
+- Install Grafana (official repo)
 
-We will use dashboard ID `14513` from Grafana.com. Go to the Grafana home page, click the `+` icon, and select `Import`.
+```bash
+sudo apt-get install -y apt-transport-https software-properties-common wget gnupg
+wget -q -O - https://packages.grafana.com/gpg.key | sudo apt-key add -
+echo "deb https://packages.grafana.com/oss/deb stable main" | sudo tee /etc/apt/sources.list.d/grafana.list
+sudo apt update
+sudo apt install grafana -y
 
-[Architecture](https://prometheus.io/docs/introduction/overview/)
+sudo systemctl enable --now grafana-server
+sudo systemctl status grafana-server --no-pager
+```
+
+- Configure Grafana → Add Prometheus as datasource (via web UI)
+  - Open browser: <http://SERVER-IP:3000>
+  - Login: admin / admin (change password)
+
+- Go to Configuration → Data Sources → Add → choose Prometheus
+  - URL: <http://localhost:9090> (or <http://SERVER-IP:9090>)
+
+- Import Grafana dashboard (e.g. ID 14513)
+- In Grafana UI → click ‘+’ → Import
+- Enter Dashboard ID 14513 → Load → choose your Prometheus data source → Import
+
+- Verify
+  - Prometheus UI: <http://SERVER-IP:9090>
+  - Check Status → Targets (should show Prometheus & Node Exporter UP)
+  - Node Exporter metrics: <http://SERVER-IP:9100/metrics>
+  - Grafana Dashboard showing metrics
+
+### [Architecture](https://prometheus.io/docs/introduction/overview/)
 ![Architecture](/img/architecture.png 'Architecture')
 
 ### Terminologies of Prometheus and Grafana
