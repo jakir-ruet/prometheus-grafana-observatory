@@ -167,7 +167,7 @@ Password: admin
 ```
 
 - Configure Prometheus as Grafana DataSource
-- Once you logged into Grafana Now first Navigate to `Settings` > `Configuration` ->> `data sources`
+- Once you logged into Grafana Now first Navigate to `Settings` > `Configuration` > `data sources`
 - Add `Data sources` and select `Prometheus`
 - Now configure Prometheus data source by providing Prometheus `URL`
 
