@@ -234,6 +234,38 @@ sudo systemctl status grafana-server --no-pager
 - `Alerts` - Rules that trigger notifications when specific conditions are met, like `CPU > 90% for 5 minutes`.
 - `Target` - Any endpoint from which Prometheus scrapes metrics, like A service exposing `/metrics`.
 
+### PromQL (Prometheus Query Language)
+
+PromQL is the query language used by Prometheus to retrieve, manipulate, and aggregate time series metrics stored in Prometheus.
+
+- It allows you to:
+  - Select metrics based on their names and labels.
+  - Filter metrics using label matchers.
+  - Perform arithmetic and aggregation operations (like sum, average, max, min).
+  - Calculate rates, increases, and other functions over time ranges.
+  - Create complex queries for monitoring, dashboards, and alerts.
+
+- Key features:
+  - Works with time series data (metrics that change over time).
+  - Supports instant vectors (current values) and range vectors (values over a time interval).
+  - Used in Grafana or Prometheus itself for visualization and alerting.
+
+#### Datatype
+
+1. `Instant Vector:` A set of time series containing a single value for each series at a given time. Used for current metric values.
+2. `Range Vector:` A set of time series with values over a range of time. Used for calculations over time, like `rate()` or `increase()`.
+3. `Scalar:` A single numeric value, not tied to a specific time series. Often returned by aggregation functions or comparisons.
+4. `String:` Rarely used in practice. Represents a string value instead of a number. Mostly used for debugging labels or internal purposes.
+
+#### Summary Table
+
+| Data Type          | Meaning                            | Example Query                         |
+| ------------------ | ---------------------------------- | ------------------------------------- |
+| **Instant Vector** | Current value for each time series | `node_cpu_seconds_total{mode="idle"}` |
+| **Range Vector**   | Values over a time range           | `rate(node_cpu_seconds_total[5m])`    |
+| **Scalar**         | Single numeric value               | `count(node_cpu_seconds_total)`       |
+| **String**         | Text value                         | Rarely used                           |
+
 ## With Regards, `Jakir`
 
 [![LinkedIn][linkedin-shield-jakir]][linkedin-url-jakir]
