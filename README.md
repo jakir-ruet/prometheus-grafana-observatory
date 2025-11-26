@@ -171,7 +171,7 @@ Password: admin
 - Add `Data sources` and select `Prometheus`
 - Now configure Prometheus data source by providing Prometheus `URL`
 
-#### [Node Exporter Installation](https://prometheus.io/download/) `node_exporter`
+#### [Node Exporter Installation](https://prometheus.io/download/)
 
 - Download and unzip
 
